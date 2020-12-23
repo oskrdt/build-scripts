@@ -9,38 +9,33 @@
 # Extract Kibana and make various file manipulations.
 ################################################################################
 FROM centos:7 AS prep_files
-# Add tar and gzip
-RUN yum update -y && yum install -y tar gzip && yum clean all
 
-WORKDIR /root
+ENV WORKDIR=/root
 
-RUN yum install -y autoconf automake bzip2 gcc-c++ git gzip libtool make openssl-devel python tar wget zlib-devel patch curl pixman-devel cairo cairo-devel cairomm-devel libjpeg-turbo-devel pango pango-devel pangomm pangomm-devel giflib-develi && \
-    mkdir -p /usr/local/lib/nodejs && \
-    wget https://nodejs.org/dist/v10.22.0/node-v10.22.0-linux-ppc64le.tar.gz && \
-    tar xzvf node-v10.22.0-linux-ppc64le.tar.gz -C /usr/local/lib/nodejs && \
-    ln -s /usr/local/lib/nodejs/node-v10.22.0-linux-ppc64le/bin/* /usr/bin/ && \
-    curl -o- -L https://yarnpkg.com/install.sh | bash && \
-    export PATH="$HOME/.yarn/bin:$HOME/.config/yarn/global/node_modules/.bin:$PATH" && \
-    git clone https://github.com/elastic/kibana.git && \
-    cd kibana && git checkout v7.9.1 && \
-    wget https://raw.githubusercontent.com/linux-on-ibm-z/scripts/master/Kibana/7.9.1/patch/kibana_patch.diff && \
-    sed -i s/s390x/ppc64le/g kibana_patch.diff && \
-    git apply kibana_patch.diff && \
-    wget https://raw.githubusercontent.com/linux-on-ibm-z/scripts/master/Kibana/7.9.1/patch/register_git_hook.diff && \
-    git apply register_git_hook.diff && \
-    groupadd kibana && useradd kibana -g kibana && chown kibana:kibana -R /root && \
-    sed -i 's|await run(Tasks.OptimizeBuild);|//await run(Tasks.OptimizeBuild);|g' src/dev/build/build_distributables.ts && \
-    su kibana -c 'yarn kbn bootstrap --oss' && \
-    su kibana -c 'yarn build --skip-os-packages --oss'
+RUN yum update -y  && yum install -y shadow-utils curl gnupg ca-certificates python gcc-c++ make git wget \
+	&& cd $WORKDIR \
+	&& curl -sL https://raw.githubusercontent.com/creationix/nvm/v0.34.0/install.sh -o install_nvm.sh \
+	&& sh install_nvm.sh && source /root/.nvm/nvm.sh \
+	&& nvm install 10.18.0 && nvm use 10.18.0 && npm install -g yarn \
+	&& cd /root && git clone https://github.com/elastic/kibana.git \
+	&& cd kibana && git checkout v7.9.1 && nvm use \
+	&& sed -i '385d' /root/kibana/package.json \
+        && sed -i '40s/git-common-dir/git-dir/' /root/kibana/src/dev/register_git_hook/register_git_hook.js \ 
+	&& sed -i '7s/#server.host: "localhost"/server.host: "0.0.0.0"/' /root/kibana/config/kibana.yml \
+	&& sed -i '28s/localhost:9200/elasticsearch:9200/' /root/kibana/config/kibana.yml \
+	&& groupadd kibana && useradd kibana -g kibana && chown kibana:kibana -R /root \
+	&& sed -i 's|NODE="${DIR}/node/bin/node"|NODE=/usr/bin/node|g' bin/kibana \
+	&& sed -i 's|--no-warnings|--no-warnings --max_old_space_size=8192|g' bin/kibana \
+	&& wget https://patch-diff.githubusercontent.com/raw/elastic/kibana/pull/57133.diff \
+	&& git apply 57133.diff \
+	&& su kibana -c 'yarn kbn bootstrap' 
 
-RUN mkdir /usr/share/kibana
+RUN mkdir -p /usr/share/kibana/ && mv /root/kibana/* /usr/share/kibana/ 
+
 WORKDIR /usr/share/kibana
-RUN tar --strip-components=1 -zxf /root/kibana/target/kibana-oss-7.9.1-SNAPSHOT-linux-ppc64le.tar.gz
-# Ensure that group permissions are the same as user permissions.
-# This will help when relying on GID-0 to run Kibana, rather than UID-1000.
-# OpenShift does this, for example.
-# REF: https://docs.openshift.org/latest/creating_images/guidelines.html
+
 RUN chmod -R g=u /usr/share/kibana
+	
 RUN find /usr/share/kibana -type d -exec chmod g+s {} \;
 
 ################################################################################
@@ -63,7 +58,7 @@ RUN chmod +x /usr/local/bin/dumb-init
 COPY --from=prep_files --chown=1000:0 /usr/share/kibana /usr/share/kibana
 WORKDIR /usr/share/kibana
 RUN ln -s /usr/share/kibana /opt/kibana
-COPY --from=prep_files --chown=1000:0 /usr/local/lib/nodejs/node-v10.22.0-linux-ppc64le/bin/* /usr/bin/
+COPY --from=prep_files --chown=1000:0 /root/.nvm/versions/node/v10.18.0/bin/* /usr/bin/
 
 ENV ELASTIC_CONTAINER true
 ENV PATH=/usr/share/kibana/bin:$PATH
