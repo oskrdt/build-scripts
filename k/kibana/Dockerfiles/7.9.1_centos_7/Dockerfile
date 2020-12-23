@@ -16,7 +16,7 @@ RUN yum update -y  && yum install -y shadow-utils curl gnupg ca-certificates pyt
 	&& cd $WORKDIR \
 	&& curl -sL https://raw.githubusercontent.com/creationix/nvm/v0.34.0/install.sh -o install_nvm.sh \
 	&& sh install_nvm.sh && source /root/.nvm/nvm.sh \
-	&& nvm install 10.18.0 && nvm use 10.18.0 && npm install -g yarn \
+	&& nvm install 10.22.0 && nvm use 10.22.0 && npm install -g yarn \
 	&& cd /root && git clone https://github.com/elastic/kibana.git \
 	&& cd kibana && git checkout v7.9.1 && nvm use \
 	&& sed -i '385d' /root/kibana/package.json \
